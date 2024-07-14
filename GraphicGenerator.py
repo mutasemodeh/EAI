@@ -1,9 +1,11 @@
 import sys
-from OpenGL.GL import *
-from OpenGL.GLUT import *
-from OpenGL.GLU import *
 import numpy as np
-import time 
+import time
+import pybullet as p
+import pybullet_data
+import random
+import trimesh
+
 from stl import mesh  # Use `pip install numpy-stl` to install
 from PIL import Image  # Pillow library for image handling
 from OCC.Core.STEPControl import STEPControl_Reader
@@ -12,19 +14,10 @@ from OCC.Core.StlAPI import StlAPI_Writer
 from pathlib import Path
 from numpy.random import default_rng
 from scipy.spatial.transform import Rotation as R
-from OCC.Core.STEPControl import STEPControl_Reader
-from OCC.Core.BRepMesh import BRepMesh_IncrementalMesh
-from OCC.Core.StlAPI import StlAPI_Writer
-from OCC.Core.BRepBndLib import brepbndlib_Add
-from OCC.Core.BRepMesh import BRepMesh_IncrementalMesh
-from OCC.Core.BRepBndLib import brepbndlib_Add
-from OCC.Core.TopoDS import TopoDS_Solid
-from OCC.Core.Bnd import Bnd_Box
-from OCC.Core.BRepBndLib import brepbndlib_Add
-import pybullet as p
-import pybullet_data
-import random
-import trimesh
+from OpenGL.GL import *
+from OpenGL.GLUT import *
+from OpenGL.GLU import *
+
 
 
  # Global variables
