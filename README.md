@@ -1,7 +1,4 @@
 # EAI
-
-
-# Your Project Name
 EAI codebase
 ## Description
 This is the code BASE for all EAI related stuff
