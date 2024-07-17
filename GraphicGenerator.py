@@ -23,12 +23,13 @@ from OpenGL.GLU import *
 
 
 cube = None
-WIDTH, HEIGHT = 4000, 4000  # Image dimensions
+WIDTH, HEIGHT = 1000, 1000  # Image dimensions
 ZFAR=500 # clippling plane in meter
-CAM_DIST= 0.02 # in meter
+CAM_DIST= 0.05 # in meter
 RND_TRANS=5 # +- 5mm in x and y
 DRP_HEIGHT=0.02 # in meter
-
+SCALE=0.001
+SIZE_LIMIT=50 ## 50mm
 def save_stl(cube, filename):
 
     """
@@ -49,6 +50,28 @@ def load_stl(filename):
         print("Error: File not found")
         sys.exit(1)
   
+
+def calculate_mesh_dimensions(mesh):
+    """
+    Calculate the dimensions (length, width, height) of a mesh.
+
+    Parameters:
+    - mesh (Trimesh object): The mesh object to calculate dimensions for.
+
+    Returns:
+    - tuple: (length, width, height)
+    """
+    # Calculate min and max coordinates of the mesh vertices
+    min_xyz = np.min(mesh.vertices, axis=0)
+    max_xyz = np.max(mesh.vertices, axis=0)
+    
+    # Calculate dimensions
+    length = max_xyz[0] - min_xyz[0]
+    width = max_xyz[1] - min_xyz[1]
+    height = max_xyz[2] - min_xyz[2]
+
+    return length, width, height
+
 def step_to_stl(step_file, stl_file):
     """
     Convert a STEP file to STL format and ensure the STL file is correctly formatted.
@@ -80,8 +103,17 @@ def step_to_stl(step_file, stl_file):
     stl_writer.Write(shape, temp_stl_file)
 
     # Use Trimesh to re-save the STL file to ensure it's correctly formatted
-    mesh = trimesh.load(temp_stl_file)
-    mesh.export(stl_file, file_type='stl')
+    trimesh_mesh = trimesh.load(temp_stl_file)
+
+    # Calculate dimensions of the mesh
+    dimensions = calculate_mesh_dimensions(trimesh_mesh)
+    # Check if any dimension exceeds 1
+    if any(dim > SIZE_LIMIT for dim in dimensions):
+        print("Dimensions exceed. Skipping export.")
+        return False
+
+    # Export the mesh to the final STL file
+    trimesh_mesh.export(stl_file, file_type='stl')
 
     return True
 
@@ -113,7 +145,7 @@ def convert_stl_to_jpeg(stl_variations_files_dir, jpeg_output_dir):
                     # Render and save screenshots for each view
                     for view_name, (eye, up) in views.items():
                         jpeg_filename = os.path.join(stl_output_dir, f"{os.path.splitext(stl_file)[0]}_{view_name}.jpeg")
-                        render_and_save_screenshot(stl_file_path, jpeg_filename)
+                        render_and_capture(stl_file_path, jpeg_filename)
                         num_images_saved += 1
 
                     print(f'Successfully converted {num_images_saved} images for {stl_file} into {stl_output_dir}')
@@ -122,11 +154,12 @@ def convert_stl_to_jpeg(stl_variations_files_dir, jpeg_output_dir):
 def convert_step_to_stl(step_files_dir, stl_files_dir):
     """
     Converts STEP files in the given directory (including subdirectories) to STL files and saves them in the specified directory,
-    maintaining the directory structure.
+    maintaining the directory structure. Models exceeding the size threshold will be ignored.
 
     Args:
     - step_files_dir (str or Path): Path to the directory containing STEP files.
     - stl_files_dir (str or Path): Path to the directory where STL files will be saved.
+    - size_threshold (float): The size threshold for models. Models exceeding this threshold will not be converted.
     """
     step_files_dir = Path(step_files_dir)
     stl_files_dir = Path(stl_files_dir)
@@ -154,51 +187,70 @@ def convert_step_to_stl(step_files_dir, stl_files_dir):
 
     print("Conversion complete.")
 
-def calculate_model_dimensions(mesh_object):
-    # Calculate min and max coordinates of the mesh vertices
-    min_xyz = np.min(mesh_object.vectors, axis=(0, 1))
-    max_xyz = np.max(mesh_object.vectors, axis=(0, 1))
-    
-    # Calculate center and size
-    center = (min_xyz + max_xyz) / 2.0
-    size = np.max(max_xyz - min_xyz)
-    print(max_xyz)
-    print(min_xyz)
+def render_and_capture(stl_filename, jpg_filename):
+    # Connect to PyBullet
+    p.connect(p.DIRECT)  # or p.GUI for a graphical version
 
-    return center, size, min_xyz, max_xyz
-
-
-def render_and_save_screenshot(stl_file, jpeg_file):
-    # Initialize PyBullet in GUI mode for rendering
-    physicsClient = p.connect(p.GUI)
-    
-    # Load the plane (base) for the objects to settle on (if needed)
+    # Set additional search path to PyBullet's data path
     p.setAdditionalSearchPath(pybullet_data.getDataPath())
-    plane_id = p.loadURDF("plane.urdf")
-    
-    # Load the new STL object
-    scale = 0.001
-    visual_shape_id = p.createVisualShape(shapeType=p.GEOM_MESH, fileName=stl_file, meshScale=[scale, scale, scale])
-    stl_object_id = p.createMultiBody(baseMass=1, baseVisualShapeIndex=visual_shape_id)
-    
-    # Set up the camera using pybullet_rendering
-    camera_position = [0, 0, CAM_DIST]
-    up_vector = [0, 1, 0]
+
+    # Load a plane for reference
+    # p.loadURDF('plane.urdf') 
+
+    # Create a visual shape for the STL object
+    visual_shape_id = p.createVisualShape(
+        shapeType=p.GEOM_MESH,
+        fileName=stl_filename,
+        meshScale=[SCALE, SCALE, SCALE],
+        rgbaColor=[0.5, 0.5, 0.5, 1],  # Gray color
+        specularColor=[1, 1, 1]  # Reflective
+    )
+    # Create a collision shape for the STL object
+    collision_shape_id = p.createCollisionShape(
+        shapeType=p.GEOM_MESH,
+        fileName=stl_filename,
+        meshScale=[SCALE, SCALE, SCALE]
+    )
+
+    # Create a multi-body for the STL object
+    p.createMultiBody(
+        baseMass=1,
+        baseCollisionShapeIndex=collision_shape_id,
+        baseVisualShapeIndex=visual_shape_id,
+        basePosition=[0, 0, 0]
+    )
+
+    # Configure camera parameters (example parameters)
+    width = WIDTH
+    height = HEIGHT
+    fov = 60
+    aspect = width / height
+    near = 0.001
+    far = 5.0
     camera_target = [0, 0, 0]
-    
-    pybullet_rendering.setup_camera(camera_position, camera_target, up_vector)
-    
-    # Render the scene
-    width, height, rgb_pixels, depth_pixels, seg_mask = pybullet_rendering.render(WIDTH, HEIGHT)
-    
-    # Convert to PIL image (assuming RGB)
-    rgb_array = np.reshape(rgb_pixels, (height, width, 4))[:, :, :3]  # Drop alpha channel
-    rgb_image = Image.fromarray(rgb_array.astype(np.uint8))
-    
-    # Save the image
-    rgb_image.save(jpeg_file, "JPEG")
-    
-    # Disconnect PyBullet
+    camera_distance = CAM_DIST
+    camera_yaw = 0.0
+    camera_pitch = -90.0  # Pointing downwards
+
+    # Compute view matrix
+    view_matrix = p.computeViewMatrixFromYawPitchRoll(camera_target, camera_distance, camera_yaw, camera_pitch, 0, upAxisIndex=2)
+
+    # Compute projection matrix
+    proj_matrix = p.computeProjectionMatrixFOV(fov, aspect, near, far)
+
+    # Capture an image from the camera
+    img_arr = p.getCameraImage(width, height, view_matrix, proj_matrix)
+
+    # Extract RGB image data
+    rgb_img = np.reshape(img_arr[2], (height, width, 4))[:, :, :3]
+
+    # Convert to PIL image format
+    pil_img = Image.fromarray(np.uint8(rgb_img))
+
+    # Save the image to the specified JPEG filename
+    pil_img.save(jpg_filename)
+
+    # Disconnect from PyBullet
     p.disconnect()
 
 
@@ -225,7 +277,6 @@ def calculate_weight(file_path, density, scale=0.001):
     weight = volume * density
     
     return weight
-
 
 def simulate_physics_stl_file(stl_file, output_file, scale=0.001, simulation_steps=240, sleep_time=1./240., debug=False):
     """
@@ -370,23 +421,15 @@ def generate_variation_stl(stl_folder, output_folder, num_simulations=5, num_var
     print("Processing complete.")
 
 
-
 # Main function
 def main():
-    step_files_dir = '/Users/modeh/EAI2/Test_Dataset/STEP'
-    stl_files_dir = '/Users/modeh/EAI2/Test_Dataset/STL'
-    stl_physics_files_dir = '/Users/modeh/EAI2/Test_Dataset/Physics_Augumented'
-    JPEG_files_dir = '/Users/modeh/EAI2/Test_Dataset/JPEG'
-
+    step_files_dir = '/Users/modeh/EAI2/Type_Dataset/STEP'
+    stl_files_dir = '/Users/modeh/EAI2/Type_Dataset/STL'
+    stl_physics_files_dir = '/Users/modeh/EAI2/Type_Dataset/Physics_Augumented'
+    JPEG_files_dir = '/Users/modeh/EAI2/Type_Dataset/JPEG'
     convert_step_to_stl(step_files_dir, stl_files_dir)
     generate_variation_stl(stl_files_dir, stl_physics_files_dir, num_simulations=1, num_variations=10)
     convert_stl_to_jpeg(stl_physics_files_dir, JPEG_files_dir)
-
-    # f1 = '/Users/modeh/EAI2/91251A054_Black-Oxide Alloy Steel Socket Head Screw.stl'
-    # f2 = '/Users/modeh/EAI2/91855A101_18-8 Stainless Steel Cap Nut.jpeg'
-    # render_and_save_screenshot(f1, f2)
-
-
     sys.exit(0)
 
 if __name__ == "__main__":
