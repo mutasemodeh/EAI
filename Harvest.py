@@ -9,7 +9,7 @@ def download_all_step_files(base_url):
     # Set up Selenium Chrome driver
     chrome_options = Options()
     chrome_options.add_argument("--headless")  # Run in headless mode, if desired
-    service = ChromeService(executable_path='/Users/modeh/Downloads/chromedriver-mac-arm64/chromedriver')  # Replace with your chromedriver path
+    service = ChromeService(executable_path='/Users/modeh/EAI2/chromedriver-mac-arm64/chromedriver')  # Replace with your chromedriver path
     driver = webdriver.Chrome(service=service, options=chrome_options)
 
     try:
@@ -50,5 +50,5 @@ def download_all_step_files(base_url):
         driver.quit()
 
 # Example base URL:
-base_url = 'https://www.mcmaster.com/mvC/Library/M4/'
+base_url = 'https://www.mcmaster.com/products/screws/rounded-head-screws~/18-8-stainless-steel-button-head-hex-drive-screws-9/'
 download_all_step_files(base_url)
