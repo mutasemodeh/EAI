@@ -15,6 +15,7 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 from torch.utils.data import DataLoader, random_split
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+
 app = typer.Typer()
 
 
@@ -50,7 +51,6 @@ class DeepEdgeNet(nn.Module):
 
 
 def prepare_data_loaders(training_data_path):
-
     dataset = datasets.ImageFolder(training_data_path, transform=transform)
     train_size = int(TRAIN_VAL_DATASET_RATIO * len(dataset))
     val_size = len(dataset) - train_size
@@ -187,7 +187,6 @@ def main(
     num_epochs: int = typer.Option(1),
     early_stopping_patience: int = typer.Option(1),
 ):
-
     base_dir = Path(base_dir) / dataset
     training_data_path = str(base_dir / "JPEG")
     model_dir = str(base_dir / "Model")
@@ -198,14 +197,19 @@ def main(
     criterion = nn.CrossEntropyLoss()  # noqa: F841
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     # Train and evaluate DeepEdgeNet
-    train_deep_edge_net(model, criterion, optimizer,
-                        train_loader, val_loader,
-                        num_epochs=num_epochs, early_stopping_patience=early_stopping_patience, model_dir=model_dir)
-
+    train_deep_edge_net(
+        model,
+        criterion,
+        optimizer,
+        train_loader,
+        val_loader,
+        num_epochs=num_epochs,
+        early_stopping_patience=early_stopping_patience,
+        model_dir=model_dir,
+    )
 
     sys.exit(0)
 
 
 if __name__ == "__main__":
     app()
-
