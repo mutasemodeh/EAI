@@ -1,6 +1,5 @@
 import os
-import time
-import cv2
+import typer
 import sys
 import signal
 from tqdm import tqdm
@@ -15,7 +14,8 @@ import torch.optim as optim
 import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 from torch.utils.data import DataLoader, random_split
-from torch.optim.lr_scheduler import StepLR, ReduceLROnPlateau
+from torch.optim.lr_scheduler import ReduceLROnPlateau
+app = typer.Typer()
 
 
 TRAIN_VAL_DATASET_RATIO = 0.8
@@ -87,27 +87,6 @@ def save_model(model, accuracy, model_dir):
     print(f"Model saved to: {model_path}")
 
 
-def load_model(model, model_path):
-    """
-    Load the model's state dictionary from a specific file path.
-
-    Parameters:
-    - model: The model architecture to load the weights into
-    - model_path: Path to the saved model file
-
-    Returns:
-    - model: The model with weights loaded
-    """
-    # Load the state dictionary from the file
-    model.load_state_dict(torch.load(model_path))
-
-    # Set the model to evaluation mode
-    model.eval()
-
-    print(f"Model loaded from: {model_path}")
-    return model
-
-
 def train_deep_edge_net(
     model,
     criterion,
@@ -115,7 +94,7 @@ def train_deep_edge_net(
     train_loader,
     val_loader,
     num_epochs=10,
-    early_stopping_patience=5,
+    early_stopping_patience=3,
     model_dir="models",
 ):
     # Scheduler to reduce learning rate when a metric has stopped improving
@@ -201,88 +180,15 @@ def train_deep_edge_net(
     return best_val_accuracy
 
 
-def calculate_class_accuracies(model, val_loader):
-    """
-    Calculate the accuracy for each class and print the class names with their accuracies.
+@app.command()
+def main(
+    base_dir: str = typer.Option("/Users/modeh/EAI2"),
+    dataset: str = typer.Option("Test2_Dataset"),
+    num_epochs: int = typer.Option(1),
+    early_stopping_patience: int = typer.Option(1),
+):
 
-    Parameters:
-    - model: The trained model
-    - val_loader: DataLoader for the validation set
-
-    Returns:
-    - class_accuracies: A dictionary where keys are class indices and values are accuracies
-    """
-    model.eval()
-    # Access the original dataset
-    original_dataset = val_loader.dataset.dataset
-    class_names = (
-        original_dataset.classes
-    )  # Extract class names from the original dataset
-    num_classes = len(class_names)
-    class_correct = np.zeros(num_classes)
-    class_total = np.zeros(num_classes)
-
-    with torch.no_grad():
-        for inputs, labels in val_loader:
-            outputs = model(inputs)
-            _, predicted = torch.max(outputs, 1)
-            for i in range(len(labels)):
-                label = labels[i].item()
-                if predicted[i] == label:
-                    class_correct[label] += 1
-                class_total[label] += 1
-
-    class_accuracies = {
-        i: class_correct[i] / class_total[i] if class_total[i] > 0 else 0
-        for i in range(num_classes)
-    }
-
-    # Print class names and their accuracies
-    for i, class_name in enumerate(class_names):
-        accuracy = class_accuracies[i] * 100  # Convert to percentage
-        print(f"Class: {class_name}, Accuracy: {accuracy:.2f}%")
-
-    return class_accuracies
-
-
-def predict_image_class(model, image, classes):
-    """
-    Predict the class of an image using the trained model.
-
-    Parameters:
-    - model: The trained model
-    - image: The input image to classify (PIL Image or tensor)
-    - val_loader: DataLoader for the validation set (to access class names)
-
-    Returns:
-    - predicted_class: The name of the predicted class
-    - confidence: The confidence percentage of the prediction
-    """
-    model.eval()
-
-    if isinstance(image, np.ndarray):
-        image = Image.fromarray(image)
-    elif isinstance(image, str):
-        image = Image.open(image)
-    image = transform(image).unsqueeze(0)  # Add batch dimension
-
-    with torch.no_grad():
-        output = model(image)
-        probabilities = torch.nn.functional.softmax(output[0], dim=0)
-        confidence, predicted_idx = torch.max(probabilities, dim=0)
-
-    predicted_class = classes[predicted_idx.item()]
-    confidence_percentage = confidence.item() * 100  # Convert to percentage
-    print(
-        f"Predicted Class: {predicted_class}, Confidence: {confidence_percentage:.2f}%"
-    )
-
-    return predicted_class, confidence_percentage
-
-
-def main():
-
-    base_dir = Path("/Users/modeh/EAI2/Metric_Dataset")
+    base_dir = Path(base_dir) / dataset
     training_data_path = str(base_dir / "JPEG")
     model_dir = str(base_dir / "Model")
     train_loader, val_loader, classes = prepare_data_loaders(training_data_path)
@@ -294,16 +200,12 @@ def main():
     # Train and evaluate DeepEdgeNet
     train_deep_edge_net(model, criterion, optimizer,
                         train_loader, val_loader,
-                        num_epochs=10, early_stopping_patience=5, model_dir=model_dir)
+                        num_epochs=num_epochs, early_stopping_patience=early_stopping_patience, model_dir=model_dir)
 
-    # model_path = (
-    #     "/Users/modeh/EAI2/Type_Dataset/Model/CNN_model_94.66_20240721_225809.pth"
-    # )
-    # image_path = "/Users/modeh/Desktop/IMG_22873.jpg"
-    # load_model(model, model_path)
-    # # calculate_class_accuracies(model, val_loader)
-    # predict_image_class(model, image_path, classes)
+
+    sys.exit(0)
 
 
 if __name__ == "__main__":
-    main()
+    app()
+

@@ -1,4 +1,5 @@
 import sys
+import typer
 import numpy as np
 import time
 import pybullet as p
@@ -13,7 +14,9 @@ from PIL import Image  # Pillow library for image handling
 from OCC.Core.STEPControl import STEPControl_Reader
 from OCC.Core.BRepMesh import BRepMesh_IncrementalMesh
 from OCC.Core.StlAPI import StlAPI_Writer
-import os 
+import os
+
+app = typer.Typer()
 
 cube = None
 WIDTH, HEIGHT = 2000, 2000  # Image dimensions
@@ -430,7 +433,6 @@ def generate_physics_stl(stl_folder, output_folder, num_simulations=5):
 
     # Iterate through STL files in the folder recursively
     for stl_file in tqdm(stl_files, desc="Generating Physics STL"):
-
         # Determine the relative path from the stl_folder to the stl_file
         relative_path = stl_file.relative_to(stl_folder)
 
@@ -457,22 +459,35 @@ def generate_physics_stl(stl_folder, output_folder, num_simulations=5):
 # Main function
 
 
-def main():
+@app.command()
+def main(
+    base_dir: str = typer.Option("/Users/modeh/EAI2"),
+    dataset: str = typer.Option("Test2_Dataset"),
+    operation_level: int = typer.Option(1),
+    num_simulations: int = typer.Option(1),
+    num_variations: int = typer.Option(1),
+):
+    base_path = Path(base_dir) / dataset
+    step_files_dir = str(base_path / "STEP")
+    stl_files_dir = str(base_path / "STL")
+    stl_physics_files_dir = str(base_path / "PHY")
+    JPEG_files_dir = str(base_path / "JPEG")
 
-    base_dir = Path("/Users/modeh/EAI2/Length_Dataset")
-    step_files_dir = str(base_dir / "STEP")
-    stl_files_dir = str(base_dir / "STL")
-    stl_physics_files_dir = str(base_dir / "PHY")
-    JPEG_files_dir = str(base_dir / "JPEG")
+    if operation_level == 1:
+        convert_step_to_stl(step_files_dir, stl_files_dir)
+        generate_physics_stl(stl_files_dir, stl_physics_files_dir, num_simulations)
+        augment_render_capture(stl_physics_files_dir, JPEG_files_dir, num_variations)
+    elif operation_level == 2:
+        generate_physics_stl(stl_files_dir, stl_physics_files_dir, num_simulations)
+        augment_render_capture(stl_physics_files_dir, JPEG_files_dir, num_variations)
+    elif operation_level == 3:
+        augment_render_capture(stl_physics_files_dir, JPEG_files_dir, num_variations)
 
-    convert_step_to_stl(step_files_dir, stl_files_dir)
-    generate_physics_stl(stl_files_dir, stl_physics_files_dir, num_simulations=5)
-    augment_render_capture(stl_physics_files_dir, JPEG_files_dir, num_variations=20)
     sys.exit(0)
 
 
 if __name__ == "__main__":
-    main()
+    app()
 
 
 # TO DO
