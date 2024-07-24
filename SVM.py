@@ -1,9 +1,6 @@
 import cv2
-from pathlib import Path
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn import svm
-from sklearn.metrics import accuracy_score
 from sklearn.model_selection import train_test_split
 from torchvision import datasets
 from torchvision.transforms import transforms
@@ -11,18 +8,297 @@ from zernike import RZern
 import os
 from datetime import datetime
 import joblib  # Import joblib for saving the models
+import networkx as nx
 
 
 VAL_FRACTION = 0.2
-IMG_WIDTH = 500
+IMG_WIDTH = 2000
 
 
-# 7 disrciportrs (invarient to rotation and scale, and translation)
+# extract edges_coordinates, corners, contours, lines, circles
+def analyze_geometry_image(image_path, debug=False):
+    # Assuming transformer function is defined elsewhere
+    image = transformer(image_path)
+
+    # Apply GaussianBlur to reduce noise and improve edge detection
+    blurred_image = cv2.GaussianBlur(image, (5, 5), 1.5)
+
+    # Step 1: Edge Detection using Canny
+    edges = cv2.Canny(blurred_image, 100, 200)
+    coordinates_edges = np.column_stack(np.where(edges > 0))
+    # Step 2: Corner Detection using Shi-Tomasi
+    corners = cv2.goodFeaturesToTrack(
+        blurred_image, maxCorners=100, qualityLevel=0.01, minDistance=10
+    )
+    corners = np.int0(corners)
+
+    # Step 3: Contour Detection
+    contours, _ = cv2.findContours(edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+    # Step 4: Line Detection using Hough Line Transform
+    lines = cv2.HoughLinesP(
+        edges, 1, np.pi / 180, threshold=100, minLineLength=50, maxLineGap=10
+    )
+
+    # Step 5: Circle Detection using Hough Circle Transform
+    circles = cv2.HoughCircles(
+        blurred_image,
+        cv2.HOUGH_GRADIENT,
+        dp=1,
+        minDist=100,
+        param1=200,
+        param2=50,
+        minRadius=10,
+        maxRadius=int(IMG_WIDTH / 2),
+    )
+
+    if debug:
+        # Create a copy of the original image to draw edges
+        image_with_edges = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        for coordinates_edge in coordinates_edges:
+            x, y = coordinates_edge.ravel()
+            cv2.circle(image_with_edges, (y, x), 5, (0, 255, 0), -1)
+
+        # Create a copy of the original image to draw corners
+        image_with_corners = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        for corner in corners:
+            x, y = corner.ravel()
+            cv2.circle(image_with_corners, (x, y), 5, (0, 255, 0), -1)
+
+        # Draw contours on the original image
+        image_with_contours = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        cv2.drawContours(image_with_contours, contours, -1, (0, 255, 0), 2)
+
+        # Create a copy of the original image to draw lines
+        image_with_lines = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        if lines is not None:
+            for line in lines:
+                x1, y1, x2, y2 = line[0]
+                cv2.line(image_with_lines, (x1, y1), (x2, y2), (0, 255, 0), 5)
+
+        # Create a copy of the original image to draw circles
+        image_with_circles = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        if circles is not None:
+            circles = np.uint16(np.around(circles))
+            for i in circles[0, :]:
+                center = (i[0], i[1])
+                radius = i[2]
+                # Circle center
+                cv2.circle(image_with_circles, center, 1, (0, 100, 100), 5)
+                # Circle outline
+                cv2.circle(image_with_circles, center, radius, (255, 0, 255), 5)
+
+        # Plot the results
+        plt.figure(figsize=(20, 12))
+
+        plt.subplot(2, 3, 1)
+        plt.imshow(image, cmap="gray")
+        plt.title("Original Image")
+        plt.axis("off")
+
+        plt.subplot(2, 3, 2)
+        plt.imshow(image_with_edges, cmap="gray")
+        plt.title("Edges Detected")
+        plt.axis("off")
+
+        # Plot edges coordinates
+
+        plt.subplot(2, 3, 3)
+        plt.imshow(image_with_corners)
+        plt.title("Corners Detected")
+        plt.axis("off")
+
+        plt.subplot(2, 3, 4)
+        plt.imshow(image_with_lines)
+        plt.title("Lines Detected")
+        plt.axis("off")
+
+        plt.subplot(2, 3, 5)
+        plt.imshow(image_with_circles)
+        plt.title("Circles Detected")
+        plt.axis("off")
+
+        plt.subplot(2, 3, 6)
+        plt.imshow(image_with_contours)
+        plt.title("Contours Detected")
+        plt.axis("off")
+
+        plt.tight_layout()
+        plt.show()
+
+    return edges_coordinates, corners, contours, lines, circles
+
+
+def detect_edges(image_path, debug=False):
+    image = transformer(image_path)
+    blurred_image = cv2.GaussianBlur(image, (5, 5), 1.5)
+    edges = cv2.Canny(blurred_image, 100, 200)
+    edges_coordinates = np.column_stack(np.where(edges > 0))
+
+    if debug:
+        image_with_edges = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        for x, y in edges_coordinates:
+            cv2.circle(image_with_edges, (y, x), 5, (0, 255, 0), -1)
+        plt.figure(figsize=(10, 5))
+        plt.imshow(image_with_edges)
+        plt.title("Edges Detected")
+        plt.axis("off")
+        plt.show()
+
+    return edges_coordinates
+
+
+def detect_corners(image_path, debug=False):
+    image = transformer(image_path)
+    blurred_image = cv2.GaussianBlur(image, (5, 5), 1.5)
+    corners = cv2.goodFeaturesToTrack(
+        blurred_image, maxCorners=100, qualityLevel=0.01, minDistance=10
+    )
+    corners = np.int0(corners)
+
+    if debug:
+        image_with_corners = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        for corner in corners:
+            x, y = corner.ravel()
+            cv2.circle(image_with_corners, (x, y), 5, (0, 255, 0), -1)
+        plt.figure(figsize=(10, 5))
+        plt.imshow(image_with_corners)
+        plt.title("Corners Detected")
+        plt.axis("off")
+        plt.show()
+
+    return corners
+
+
+def detect_contours(image_path, debug=False):
+    image = transformer(image_path)
+    blurred_image = cv2.GaussianBlur(image, (5, 5), 1.5)
+    edges = cv2.Canny(blurred_image, 100, 200)
+    contours, _ = cv2.findContours(edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+
+    if debug:
+        image_with_contours = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        cv2.drawContours(image_with_contours, contours, -1, (0, 255, 0), 2)
+        plt.figure(figsize=(10, 5))
+        plt.imshow(image_with_contours)
+        plt.title("Contours Detected")
+        plt.axis("off")
+        plt.show()
+
+    return contours
+
+
+def detect_lines(image_path, debug=False):
+    image = transformer(image_path)
+    blurred_image = cv2.GaussianBlur(image, (5, 5), 1.5)
+    edges = cv2.Canny(blurred_image, 100, 200)
+    lines = cv2.HoughLinesP(
+        edges, 1, np.pi / 180, threshold=100, minLineLength=50, maxLineGap=10
+    )
+
+    if debug:
+        image_with_lines = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        if lines is not None:
+            for line in lines:
+                x1, y1, x2, y2 = line[0]
+                cv2.line(image_with_lines, (x1, y1), (x2, y2), (0, 255, 0), 5)
+        plt.figure(figsize=(10, 5))
+        plt.imshow(image_with_lines)
+        plt.title("Lines Detected")
+        plt.axis("off")
+        plt.show()
+
+    return lines
+
+
+def detect_circles(image_path, debug=False):
+    image = transformer(image_path)
+    blurred_image = cv2.GaussianBlur(image, (5, 5), 1.5)
+    circles = cv2.HoughCircles(
+        blurred_image,
+        cv2.HOUGH_GRADIENT,
+        dp=1,
+        minDist=100,
+        param1=200,
+        param2=50,
+        minRadius=10,
+        maxRadius=int(IMG_WIDTH / 2),
+    )
+
+    if debug:
+        image_with_circles = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        if circles is not None:
+            circles = np.uint16(np.around(circles))
+            for i in circles[0, :]:
+                center = (i[0], i[1])
+                radius = i[2]
+                cv2.circle(image_with_circles, center, 1, (0, 100, 100), 5)
+                cv2.circle(image_with_circles, center, radius, (255, 0, 255), 5)
+        plt.figure(figsize=(10, 5))
+        plt.imshow(image_with_circles)
+        plt.title("Circles Detected")
+        plt.axis("off")
+        plt.show()
+
+    return circles
+
+def detect_convex_hulls(image_path, debug=False):
+    image = transformer(image_path)
+    blurred_image = cv2.GaussianBlur(image, (5, 5), 1.5)
+    edges = cv2.Canny(blurred_image, 100, 200)
+    contours, _ = cv2.findContours(edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
+    
+    if debug:
+        image_with_hulls = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        for contour in contours:
+            hull = cv2.convexHull(contour)
+            cv2.drawContours(image_with_hulls, [hull], -1, (0, 255, 0), 2)
+        plt.figure(figsize=(10, 5))
+        plt.imshow(image_with_hulls)
+        plt.title("Convex Hulls Detected")
+        plt.axis("off")
+        plt.show()
+
+    return contours  
+
+def detect_single_object_rotated_bounding_box(image_path, debug=False):
+    image = transformer(image_path)  # Preprocess image if necessary
+    blurred_image = cv2.GaussianBlur(image, (5, 5), 1.5)
+    edges = cv2.Canny(blurred_image, 100, 200)
+
+    # Find contours
+    contours, _ = cv2.findContours(edges, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+
+    if not contours:
+        return None  # No contours found
+
+    # Assuming the largest contour is the object of interest
+    contour = max(contours, key=cv2.contourArea)
+    
+    # Compute rotated bounding box
+    rect = cv2.minAreaRect(contour)
+    box = cv2.boxPoints(rect)
+    box = np.int0(box)
+    
+    if debug:
+        # Draw rotated bounding box
+        image_with_box = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
+        image_with_box = cv2.addWeighted(image_with_box, 0.5, np.zeros_like(image_with_box), 0, 0)
+        cv2.drawContours(image_with_box, [box], 0, (0, 255, 0), 2)
+        
+        plt.figure(figsize=(10, 5))
+        plt.imshow(image_with_box)
+        plt.title("Rotated Bounding Box for Single Object")
+        plt.axis("off")
+        plt.show()
+
+    return box  # Return bounding box points
+
 def extract_hu_moments(image_path, debug=False):
-    # Load and resizethe image in grayscale
-    image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-    image = cv2.resize(image, (IMG_WIDTH, IMG_WIDTH))
+    # 7 disrciportrs (invarient to rotation and scale, and translation)
 
+    # Load and resizethe image in grayscale
+    image = transformer(image_path)
     # Compute moments
     moments = cv2.moments(image)
 
@@ -46,11 +322,10 @@ def extract_hu_moments(image_path, debug=False):
 
 
 def compute_zernike_moments(image_path, max_order=8):
-    # Load and resizethe image in grayscale
-    image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-    image = cv2.resize(image, (IMG_WIDTH, IMG_WIDTH))
-    image = image / np.max(image)  # Normalize to range [0, 1]
+    # good for rotationaly invarient shape on a desk
 
+    # Load and resizethe image in grayscale
+    image = transformer(image_path)
     # Prepare Zernike calculator
     cart = RZern(max_order)
     L, K = image.shape
@@ -70,11 +345,11 @@ def compute_zernike_moments(image_path, max_order=8):
     return zernike_moments
 
 
-# good for intricate detailes images and texture (invarient to rotation and scale, based on blolbs matching)
 def extract_sift_features(image_path, debug=False):
+    # good for intricate detailes images and texture (invarient to rotation and scale, based on blolbs matching)
+
     # Load and resizethe image in grayscale
-    image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-    image = cv2.resize(image, (IMG_WIDTH, IMG_WIDTH))
+    image = transformer(image_path)
 
     # Create a SIFT detector object
     sift = cv2.SIFT_create()
@@ -111,8 +386,7 @@ def extract_sift_features(image_path, debug=False):
 
 
 def extract_hog_features(image_path):
-    image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-    image = cv2.resize(image, (IMG_WIDTH, IMG_WIDTH))
+    image = transformer(image_path)
     features, _ = hog(
         image,
         orientations=8,
@@ -124,15 +398,18 @@ def extract_hog_features(image_path):
 
 
 def extract_lbp_features(image_path):
-    image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-    image = cv2.resize(image, (IMG_WIDTH, IMG_WIDTH))
+    # good for structures with textures
+
+    image = transformer(image_path)
     lbp = local_binary_pattern(image, P=8, R=1, method="uniform")
     hist, _ = np.histogram(lbp, bins=np.arange(0, 10), range=(0, 9))
     return hist
 
 
 def extract_orb_features(image_path):
-    image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    # similar to SIFT but faster
+
+    image = transformer(image_path)
     orb = cv2.ORB_create()
     keypoints, descriptors = orb.detectAndCompute(image, None)
     if descriptors is None:
@@ -141,14 +418,15 @@ def extract_orb_features(image_path):
 
 
 def extract_fft_features(image_paths, debug=False):
+    # good for periodic structres and their singutre
+
     if isinstance(image_paths, str):
         image_paths = [image_paths]
 
     all_avg_magnitudes = []
 
     for image_path in image_paths:
-        image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
-        image = cv2.resize(image, (IMG_WIDTH, IMG_WIDTH))
+        image = transformer(image_path)
 
         # Compute FFT
         fft = np.fft.fft2(image)
@@ -172,6 +450,21 @@ def extract_fft_features(image_paths, debug=False):
         plt.show()
 
     return all_avg_magnitudes if len(image_paths) > 1 else all_avg_magnitudes[0]
+
+
+def combine_features(image_path):
+    # combine multipe of more features such that they can be classified normally
+
+    # Extract Hu Moments
+    hu_moments = extract_hu_moments(image_path)
+    # zernike_moments = compute_zernike_moments(image_path)
+    # Extract SIFT features
+    sift_features = extract_sift_features(image_path)
+
+    # # Concatenate Hu Moments and SIFT features
+    combined_features = np.concatenate((hu_moments, sift_features))
+
+    return combined_features
 
 
 def radial_average(image):
@@ -200,17 +493,11 @@ def radial_average(image):
     return radial_profile
 
 
-def extract_combined_features(image_path):
-    # Extract Hu Moments
-    hu_moments = extract_hu_moments(image_path)
-    # zernike_moments = compute_zernike_moments(image_path)
-    # Extract SIFT features
-    sift_features = extract_sift_features(image_path)
-
-    # # Concatenate Hu Moments and SIFT features
-    combined_features = np.concatenate((hu_moments, sift_features))
-
-    return combined_features
+def transformer(image_path):
+    image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
+    image = cv2.resize(image, (IMG_WIDTH, IMG_WIDTH))
+    # image = image / np.max(image)  # Normalize to range [0, 1]
+    return image
 
 
 def prepare_data(training_data_path):
@@ -256,56 +543,42 @@ def save_svm_model(model, accuracy, model_dir):
     print(f"Model saved to: {model_path}")
 
 
-def find_edges_and_corners(image_path):
-    # Read the image in grayscale
-    image = cv2.imread(image_path, cv2.IMREAD_GRAYSCALE)
 
-    # Step 1: Edge Detection using Canny
-    edges = cv2.Canny(image, 100, 200)
-
-    # Step 2: Corner Detection using Shi-Tomasi
-    corners = cv2.goodFeaturesToTrack(
-        image, maxCorners=100, qualityLevel=0.01, minDistance=10
-    )
-    corners = np.int0(corners)
-
-    # Create a copy of the image to draw corners
-    image_with_corners = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
-    for corner in corners:
-        x, y = corner.ravel()
-        cv2.circle(image_with_corners, (x, y), 3, (0, 255, 0), -1)
-
-    # Step 3: Contour Detection
-    contours, _ = cv2.findContours(edges, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
-
-    # Draw contours on the original image
-    image_with_contours = cv2.cvtColor(image, cv2.COLOR_GRAY2BGR)
-    cv2.drawContours(image_with_contours, contours, -1, (0, 255, 0), 2)
-
-    # Plot the results
-    plt.figure(figsize=(20, 10))
-
-    plt.subplot(1, 3, 1)
-    plt.imshow(edges, cmap="gray")
-    plt.title("Edges Detected")
-    plt.axis("off")
-
-    plt.subplot(1, 3, 2)
-    plt.imshow(image_with_corners)
-    plt.title("Corners Detected")
-    plt.axis("off")
-
-    plt.subplot(1, 3, 3)
-    plt.imshow(image_with_contours)
-    plt.title("Contours Detected")
-    plt.axis("off")
-
-    plt.tight_layout()
+def plot_graph_from_coordinates(coordinates, edges=None):
+    """
+    Constructs a graph from given (x, y) coordinates and plots it.
+    
+    Args:
+    - coordinates (numpy array): Array of shape (n, 2) where n is the number of nodes, and each row is (x, y) coordinate.
+    - edges (list of tuples): Optional list of edges where each edge is a tuple (i, j) representing a connection between nodes i and j.
+    
+    Returns:
+    - G (networkx.Graph): The constructed graph.
+    """
+    # Create a new graph
+    G = nx.Graph()
+    
+    # Add nodes with positions as node attributes
+    for idx, (x, y) in enumerate(coordinates):
+        G.add_node(idx, pos=(x, y))
+    
+    # Add edges if provided
+    if edges is not None:
+        G.add_edges_from(edges)
+    
+    # Extract positions for plotting
+    pos = nx.get_node_attributes(G, 'pos')
+    
+    # Draw the graph
+    plt.figure(figsize=(10, 7))
+    nx.draw(G, pos, with_labels=True, node_color='lightblue', edge_color='gray', node_size=500, font_size=10, font_color='black')
+    plt.title('Graph from Coordinates')
     plt.show()
+    
+    return G
 
 
 def main():
-
     # # Prepare data
     # base_dir = Path('/Users/modeh/EAI2/Type_Dataset')
     # training_data_path = str(base_dir / 'JPEG')
@@ -327,11 +600,11 @@ def main():
     M3 = "/Users/modeh/EAI2/Metric_Dataset/JPEG/M3/91294A138_Black-Oxide Alloy Steel Hex Drive Flat Head Screw_sim_1_xy_var_0.jpg"
     M4 = "/Users/modeh/EAI2/Metric_Dataset/JPEG/M4/91294A198_Black-Oxide Alloy Steel Hex Drive Flat Head Screw_sim_1_xy_var_1.jpg"
     M5 = "/Users/modeh/EAI2/Metric_Dataset/JPEG/M5/91294A216_Black-Oxide Alloy Steel Hex Drive Flat Head Screw_sim_1_xy_var_1.jpg"
-
+    C2 = "/Users/modeh/EAI2/Type_Dataset/JPEG/Wing_Nut/90866A129_Zinc-Plated Steel Wing Nut_sim_5_xy_var_15.jpg"
     # extract_fft_features([M2,M3,M4,M5],debug=True)
-
-    find_edges_and_corners(M2)
-
+    x=detect_contours(C2, debug=False)
+    print(x.flatten)
+    # plot_graph_from_coordinates(x)
 
 if __name__ == "__main__":
     main()

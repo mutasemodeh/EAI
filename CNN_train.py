@@ -21,7 +21,7 @@ app = typer.Typer()
 
 TRAIN_VAL_DATASET_RATIO = 0.8
 IMG_WIDTH = 250
-
+CNN_FACTOR=8
 
 transform = transforms.Compose(
     [
@@ -36,10 +36,10 @@ transform = transforms.Compose(
 class DeepEdgeNet(nn.Module):
     def __init__(self, num_classes):
         super(DeepEdgeNet, self).__init__()
-        self.conv1 = nn.Conv2d(1, 16, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
-        self.fc1 = nn.Linear(32 * IMG_WIDTH * IMG_WIDTH, 64)
-        self.fc2 = nn.Linear(64, num_classes)
+        self.conv1 = nn.Conv2d(1, 2*CNN_FACTOR, kernel_size=3, padding=1)
+        self.conv2 = nn.Conv2d(2*CNN_FACTOR, 4*CNN_FACTOR, kernel_size=3, padding=1)
+        self.fc1 = nn.Linear(4*CNN_FACTOR * IMG_WIDTH * IMG_WIDTH, 8*CNN_FACTOR)
+        self.fc2 = nn.Linear(8*CNN_FACTOR, num_classes)
 
     def forward(self, x):
         x = torch.relu(self.conv1(x))
@@ -183,9 +183,9 @@ def train_deep_edge_net(
 @app.command()
 def main(
     base_dir: str = typer.Option("/Users/modeh/EAI2"),
-    dataset: str = typer.Option("Test2_Dataset"),
-    num_epochs: int = typer.Option(1),
-    early_stopping_patience: int = typer.Option(1),
+    dataset: str = typer.Option("Type_Dataset"),
+    num_epochs: int = typer.Option(10),
+    early_stopping_patience: int = typer.Option(3),
 ):
     base_dir = Path(base_dir) / dataset
     training_data_path = str(base_dir / "JPEG")

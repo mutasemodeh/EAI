@@ -14,6 +14,7 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 from torch.utils.data import DataLoader, random_split
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+
 app = typer.Typer()
 
 
@@ -303,7 +304,6 @@ def main(
     train_loader, val_loader, classes = prepare_data_loaders(training_data_path)
     model = DeepEdgeNet(len(classes))
     load_model(model, model_path)
-
 
     if image_path is None:
         # Calculate class accuracies on the validation set
