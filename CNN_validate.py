@@ -14,7 +14,7 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 from torch.utils.data import DataLoader, random_split
 from torch.optim.lr_scheduler import ReduceLROnPlateau
-
+from CNN_train import DeepEdgeNet, VGG16Custom 
 app = typer.Typer()
 
 
@@ -30,24 +30,6 @@ transform = transforms.Compose(
         transforms.Normalize((0.5,), (0.5,)),
     ]
 )
-
-
-class DeepEdgeNet(nn.Module):
-    def __init__(self, num_classes):
-        super(DeepEdgeNet, self).__init__()
-        self.conv1 = nn.Conv2d(1, 16, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
-        self.fc1 = nn.Linear(32 * IMG_WIDTH * IMG_WIDTH, 64)
-        self.fc2 = nn.Linear(64, num_classes)
-
-    def forward(self, x):
-        x = torch.relu(self.conv1(x))
-        x = torch.relu(self.conv2(x))
-        x = x.view(x.size(0), -1)  # Flatten
-        x = torch.relu(self.fc1(x))
-        x = self.fc2(x)
-        return x
-
 
 def prepare_data_loaders(training_data_path):
     dataset = datasets.ImageFolder(training_data_path, transform=transform)
@@ -282,8 +264,8 @@ def predict_image_class(model, image, classes):
 @app.command()
 def main(
     base_dir: str = typer.Option("/Users/modeh/EAI2"),
-    dataset: str = typer.Option("Test2_Dataset"),
-    image_path: str = typer.Option(None),
+    dataset: str = typer.Option("Type_Dataset"),
+    image_path: str = typer.Option('/Users/modeh/EAI2/Type_Dataset/JPEG/Square_Nut/94855A201_Low-Strength Steel Square Nut_sim_3_xy_var_16.jpg'),
     model_file: str = typer.Option(None),
 ):
     base_dir = Path(base_dir) / dataset
@@ -302,7 +284,7 @@ def main(
 
     # Prepare the data loaders and the model
     train_loader, val_loader, classes = prepare_data_loaders(training_data_path)
-    model = DeepEdgeNet(len(classes))
+    model = VGG16Custom(len(classes))
     load_model(model, model_path)
 
     if image_path is None:

@@ -15,13 +15,13 @@ import torchvision.transforms as transforms
 import torchvision.datasets as datasets
 from torch.utils.data import DataLoader, random_split
 from torch.optim.lr_scheduler import ReduceLROnPlateau
+import torchvision.models as models
 
 app = typer.Typer()
-
+CNN_FACTOR=8
 
 TRAIN_VAL_DATASET_RATIO = 0.8
 IMG_WIDTH = 250
-CNN_FACTOR=8
 
 transform = transforms.Compose(
     [
@@ -32,23 +32,70 @@ transform = transforms.Compose(
     ]
 )
 
-
 class DeepEdgeNet(nn.Module):
     def __init__(self, num_classes):
         super(DeepEdgeNet, self).__init__()
-        self.conv1 = nn.Conv2d(1, 2*CNN_FACTOR, kernel_size=3, padding=1)
-        self.conv2 = nn.Conv2d(2*CNN_FACTOR, 4*CNN_FACTOR, kernel_size=3, padding=1)
-        self.fc1 = nn.Linear(4*CNN_FACTOR * IMG_WIDTH * IMG_WIDTH, 8*CNN_FACTOR)
-        self.fc2 = nn.Linear(8*CNN_FACTOR, num_classes)
+        self.conv1 = nn.Conv2d(1, 16, kernel_size=3, padding=1)
+        self.bn1=nn.BatchNorm2d(16)
+        self.conv2 = nn.Conv2d(16, 32, kernel_size=3, padding=1)
+        self.bn2=nn.BatchNorm2d(32)
+        # self.conv3 = nn.Conv2d(32, 64, kernel_size=3, padding=1)
+        # self.bn3=nn.BatchNorm2d(64)
+
+        self.fc1 = nn.Linear(32 *IMG_WIDTH *IMG_WIDTH, 64)
+        self.fc2 = nn.Linear(64, num_classes)
+        
+        self.flatten = nn.Flatten()
+        self.dropout = nn.Dropout(0.5)
+       
+        self.pool = nn.MaxPool2d(kernel_size=2, stride=2)
+        self.adaptive_pool = nn.AdaptiveAvgPool2d((1, 1))
 
     def forward(self, x):
-        x = torch.relu(self.conv1(x))
-        x = torch.relu(self.conv2(x))
-        x = x.view(x.size(0), -1)  # Flatten
-        x = torch.relu(self.fc1(x))
+        x=self.conv1(x)
+        # x=self.bn1(x)
+        x=torch.relu(x)
+        x=self.conv2(x)
+        # x=self.bn2(x)
+        x=torch.relu(x)
+        # x=self.conv3(x)
+        # # x=self.bn2(x)
+        # x=torch.relu(x)
+        # x = self.adaptive_pool(x)
+        
+        x=self.flatten(x)
+        x=self.fc1(x)
+        x=torch.relu(x)
+        x = self.dropout(x)
         x = self.fc2(x)
         return x
-
+class VGG16Custom(nn.Module):
+    def __init__(self, num_classes):
+        super(VGG16Custom, self).__init__()
+        # Load the pretrained VGG16 model
+        self.vgg16 = models.vgg16(pretrained=True)
+        
+        # Modify the first convolutional layer to accept grayscale images
+        self.vgg16.features[0] = nn.Conv2d(1, 64, kernel_size=3, padding=1)
+        
+        # Freeze the layers except the final classifier layers
+        for param in self.vgg16.parameters():
+            param.requires_grad = False
+        
+        # Modify the classifier to match the number of classes
+        self.vgg16.classifier = nn.Sequential(
+            nn.Linear(512 * 7 * 7, 4096),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.5),
+            nn.Linear(4096, 4096),
+            nn.ReLU(inplace=True),
+            nn.Dropout(0.5),
+            nn.Linear(4096, num_classes)
+        )
+        
+    def forward(self, x):
+        x = self.vgg16(x)
+        return x
 
 def prepare_data_loaders(training_data_path):
     dataset = datasets.ImageFolder(training_data_path, transform=transform)
@@ -183,7 +230,7 @@ def train_deep_edge_net(
 @app.command()
 def main(
     base_dir: str = typer.Option("/Users/modeh/EAI2"),
-    dataset: str = typer.Option("Type_Dataset"),
+    dataset: str = typer.Option("Length_Dataset"),
     num_epochs: int = typer.Option(10),
     early_stopping_patience: int = typer.Option(3),
 ):
@@ -194,6 +241,7 @@ def main(
 
     # # # Prepare the data DeepEdgeNet model
     model = DeepEdgeNet(len(classes))
+    model = VGG16Custom(len(classes))
     criterion = nn.CrossEntropyLoss()  # noqa: F841
     optimizer = optim.Adam(model.parameters(), lr=0.001)
     # Train and evaluate DeepEdgeNet
